@@ -48,18 +48,12 @@ export const updateProfile = (userId, data) =>
 
 // ─── Household helpers ──────────────────────────────────────────────────────
 
-export const createHousehold = async (name, userId) => {
-  const { data: hh, error } = await supabase
-    .from('households')
-    .insert({ name })
-    .select()
-    .single()
+export const createHousehold = async (name) => {
+  const { data, error } = await supabase.rpc('create_household', {
+    household_name: name,
+  })
   if (error) return { error }
-  const { error: profileError } = await supabase
-    .from('profiles')
-    .update({ household_id: hh.id })
-    .eq('id', userId)
-  return { data: hh, error: profileError }
+  return { data }
 }
 
 export const joinHousehold = async (inviteCode, userId) => {

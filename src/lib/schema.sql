@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS expenses (
   currency       TEXT NOT NULL DEFAULT 'USD',
   amount         NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
   expense_date   DATE NOT NULL DEFAULT CURRENT_DATE,
+  receipt_url    TEXT,                        -- storage path in bucket "receipts"
   created_at     TIMESTAMPTZ DEFAULT NOW(),
   updated_at     TIMESTAMPTZ DEFAULT NOW()
 );
@@ -166,6 +167,28 @@ CREATE POLICY "Household members can update budgets"
 CREATE POLICY "Household members can delete budgets"
   ON budgets FOR DELETE
   USING (household_id = my_household_id());
+
+-- ────────────────────────────────────────────────
+-- STORAGE – bucket "receipts"
+-- Run in Supabase SQL Editor AFTER creating the
+-- bucket manually in Storage > New bucket (name: receipts, public: true)
+-- ────────────────────────────────────────────────
+
+-- Migration for existing deployments (safe to run even if column exists):
+-- ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_url TEXT;
+
+-- Storage RLS policies (execute in SQL Editor):
+-- CREATE POLICY "Household members can upload receipts"
+--   ON storage.objects FOR INSERT
+--   WITH CHECK (bucket_id = 'receipts' AND auth.uid() IS NOT NULL);
+
+-- CREATE POLICY "Household members can read receipts"
+--   ON storage.objects FOR SELECT
+--   USING (bucket_id = 'receipts' AND auth.uid() IS NOT NULL);
+
+-- CREATE POLICY "Users can delete own receipts"
+--   ON storage.objects FOR DELETE
+--   USING (bucket_id = 'receipts' AND auth.uid() IS NOT NULL);
 
 -- ────────────────────────────────────────────────
 -- TRIGGER: auto-create profile on signup

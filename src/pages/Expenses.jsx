@@ -1,22 +1,30 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
-import { Plus, Search, Edit2, Trash2, X, Filter, ChevronDown } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, X, Filter, ChevronDown, Paperclip, FileText, Eye } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import {
   getExpenses, createExpense, updateExpense, deleteExpense,
-  getCategories, getHouseholdMembers, uploadReceipt
+  getCategories, getHouseholdMembers,
+  uploadReceipt, deleteReceipt, getReceiptPublicUrl,
 } from '../lib/supabase'
 
 const CURRENCIES = ['USD', 'PEN', 'EUR', 'COP', 'MXN', 'ARS', 'CLP']
 
+const RECEIPT_MAX_BYTES = 5 * 1024 * 1024
+const RECEIPT_ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf'
+
 function ExpenseModal({ expense, categories, householdId, userId, onClose, onSaved }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const isEdit = !!expense
   const [receiptFile, setReceiptFile] = useState(null)
-  const [receiptPreview, setReceiptPreview] = useState(expense?.receipt_url || null)
+  const [receiptPreview, setReceiptPreview] = useState(null)
+  const [removeReceipt, setRemoveReceipt] = useState(false)
+  const isEdit = !!expense
 
+  const existingReceiptUrl = isEdit && expense.receipt_url
+    ? getReceiptPublicUrl(expense.receipt_url)
+    : null
 
   const { register, handleSubmit, formState: { errors } } = useForm({
     defaultValues: isEdit ? {
@@ -33,35 +41,77 @@ function ExpenseModal({ expense, categories, householdId, userId, onClose, onSav
     }
   })
 
+  const handleReceiptChange = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    if (!RECEIPT_ACCEPT.includes(file.type)) {
+      setError('Tipo no permitido. Usa JPG, PNG, WEBP o PDF.')
+      return
+    }
+    if (file.size > RECEIPT_MAX_BYTES) {
+      setError('El archivo no puede superar 5 MB.')
+      return
+    }
+    setError('')
+    setReceiptFile(file)
+    setRemoveReceipt(false)
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onload = (ev) => setReceiptPreview(ev.target.result)
+      reader.readAsDataURL(file)
+    } else {
+      setReceiptPreview(null)
+    }
+  }
+
+  const handleClearReceipt = () => {
+    setReceiptFile(null)
+    setReceiptPreview(null)
+    setRemoveReceipt(true)
+  }
+
   const onSubmit = async (data) => {
-  setError('')
-  setLoading(true)
+    setError('')
+    setLoading(true)
+    const payload = {
+      ...data,
+      amount: Number(data.amount),
+      category_id: data.category_id || null,
+      household_id: householdId,
+      user_id: userId,
+    }
 
-  let receipt_url = expense?.receipt_url || null
+    let expenseId = expense?.id
 
-  // Si hay un archivo nuevo, súbelo primero
-  if (receiptFile) {
-    const tempId = isEdit ? expense.id : crypto.randomUUID()
-    const { url, error: uploadError } = await uploadReceipt(receiptFile, tempId)
-    if (uploadError) { setError('Error subiendo imagen: ' + uploadError.message); setLoading(false); return }
-    receipt_url = url
+    if (isEdit) {
+      const { error: err } = await updateExpense(expenseId, payload)
+      if (err) { setError(err.message); setLoading(false); return }
+    } else {
+      const { data: created, error: err } = await createExpense(payload)
+      if (err) { setError(err.message); setLoading(false); return }
+      expenseId = created.id
+    }
+
+    if (receiptFile) {
+      if (isEdit && expense.receipt_url) await deleteReceipt(expense.receipt_url)
+      const { data: rd, error: uploadErr } = await uploadReceipt(receiptFile, householdId, expenseId)
+      if (uploadErr) {
+        setError('Gasto guardado, pero error al subir recibo: ' + uploadErr.message)
+        setLoading(false)
+        onSaved()
+        return
+      }
+      await updateExpense(expenseId, { receipt_url: rd.path })
+    } else if (removeReceipt && isEdit && expense.receipt_url) {
+      await deleteReceipt(expense.receipt_url)
+      await updateExpense(expenseId, { receipt_url: null })
+    }
+
+    setLoading(false)
+    onSaved()
   }
 
-  const payload = {
-    ...data,
-    amount: Number(data.amount),
-    category_id: data.category_id || null,
-    household_id: householdId,
-    user_id: userId,
-    receipt_url,
-  }
-  const { error: err } = isEdit
-    ? await updateExpense(expense.id, payload)
-    : await createExpense(payload)
-  setLoading(false)
-  if (err) setError(err.message)
-  else onSaved()
-}
+  const showUploadZone = !receiptFile && (!existingReceiptUrl || removeReceipt)
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -153,34 +203,56 @@ function ExpenseModal({ expense, categories, householdId, userId, onClose, onSav
                 placeholder="Notas adicionales..."
               />
             </div>
-          </div>
 
-          <div className="col-span-2">
-  <label className="block text-sm font-medium text-gray-700 mb-1">
-    Foto / Comprobante (opcional)
-  </label>
-  <input
-    type="file"
-    accept="image/*"
-    onChange={e => {
-      const file = e.target.files[0]
-      if (!file) return
-      setReceiptFile(file)
-      setReceiptPreview(URL.createObjectURL(file))
-    }}
-    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-  />
-  {receiptPreview && (
-    <div className="mt-2 relative inline-block">
-      <img src={receiptPreview} alt="Comprobante" className="h-24 rounded-lg border border-gray-200 object-cover" />
-      <button
-        type="button"
-        onClick={() => { setReceiptFile(null); setReceiptPreview(null) }}
-        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600"
-      >✕</button>
-    </div>
-  )}
-</div>
+            {/* ── Recibo ─────────────────────────────────────────── */}
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Recibo / Comprobante</label>
+
+              {/* Recibo existente (edición) */}
+              {existingReceiptUrl && !removeReceipt && !receiptFile && (
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-lg mb-2">
+                  <FileText size={16} className="text-emerald-600 flex-shrink-0" />
+                  <span className="text-sm text-emerald-700 flex-1 truncate">Recibo adjunto</span>
+                  <a href={existingReceiptUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:underline font-medium">
+                    <Eye size={12} /> Ver
+                  </a>
+                  <button type="button" onClick={handleClearReceipt}
+                    className="text-xs text-red-500 hover:text-red-700 font-medium">
+                    Eliminar
+                  </button>
+                </div>
+              )}
+
+              {/* Archivo nuevo seleccionado */}
+              {receiptFile && (
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-lg mb-2">
+                  {receiptPreview
+                    ? <img src={receiptPreview} alt="preview" className="w-9 h-9 object-cover rounded flex-shrink-0" />
+                    : <FileText size={16} className="text-blue-600 flex-shrink-0" />
+                  }
+                  <span className="text-sm text-blue-700 flex-1 truncate">{receiptFile.name}</span>
+                  <button type="button" onClick={handleClearReceipt}
+                    className="text-xs text-red-500 hover:text-red-700 font-medium">
+                    Quitar
+                  </button>
+                </div>
+              )}
+
+              {/* Zona de carga */}
+              {showUploadZone && (
+                <label className="flex flex-col items-center gap-1.5 px-4 py-5 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                  <Paperclip size={20} className="text-gray-400" />
+                  <span className="text-sm text-gray-500 text-center">
+                    Adjuntar recibo<br />
+                    <span className="text-xs text-gray-400">JPG, PNG, WEBP o PDF · máx. 5 MB</span>
+                  </span>
+                  <input type="file" className="hidden" accept={RECEIPT_ACCEPT}
+                    onChange={handleReceiptChange} />
+                </label>
+              )}
+            </div>
+          </div>
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
@@ -251,6 +323,8 @@ export default function Expenses() {
 
   const handleDelete = async () => {
     if (!deleteId) return
+    const expenseToDelete = expenses.find(e => e.id === deleteId)
+    if (expenseToDelete?.receipt_url) await deleteReceipt(expenseToDelete.receipt_url)
     await deleteExpense(deleteId)
     setDeleteId(null)
     load()
@@ -365,15 +439,18 @@ export default function Expenses() {
                   <tr key={e.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{e.expense_date}</td>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{e.item}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-medium text-gray-900">{e.item}</p>
+                        {e.receipt_url && (
+                          <a href={getReceiptPublicUrl(e.receipt_url)} target="_blank" rel="noopener noreferrer"
+                            title="Ver recibo"
+                            className="text-gray-400 hover:text-blue-600 transition-colors flex-shrink-0">
+                            <Paperclip size={13} />
+                          </a>
+                        )}
+                      </div>
                       {e.description && <p className="text-xs text-gray-400 truncate max-w-xs">{e.description}</p>}
                     </td>
-                  {e.receipt_url && (
-                    <a href={e.receipt_url} target="_blank" rel="noreferrer"
-                      className="text-xs text-blue-500 hover:underline flex items-center gap-1 mt-0.5">
-                      📎 Ver comprobante
-                    </a>
-)}
                     <td className="px-4 py-3 text-gray-600">{e.establishment}</td>
                     <td className="px-4 py-3">
                       {e.categories ? (
@@ -415,7 +492,16 @@ export default function Expenses() {
               <div key={e.id} className="p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 truncate">{e.item}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-semibold text-gray-900 truncate">{e.item}</p>
+                      {e.receipt_url && (
+                        <a href={getReceiptPublicUrl(e.receipt_url)} target="_blank" rel="noopener noreferrer"
+                          title="Ver recibo"
+                          className="text-gray-400 hover:text-blue-600 transition-colors flex-shrink-0">
+                          <Paperclip size={13} />
+                        </a>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-500">{e.establishment} · {e.expense_date}</p>
                     {e.categories && (
                       <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium text-white"

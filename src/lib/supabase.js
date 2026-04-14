@@ -48,12 +48,18 @@ export const updateProfile = (userId, data) =>
 
 // ─── Household helpers ──────────────────────────────────────────────────────
 
-export const createHousehold = async (name) => {
-  const { data, error } = await supabase.rpc('create_household', {
-    household_name: name,
-  })
+export const createHousehold = async (name, userId) => {
+  const { data: hh, error } = await supabase
+    .from('households')
+    .insert({ name })
+    .select()
+    .single()
   if (error) return { error }
-  return { data }
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({ household_id: hh.id })
+    .eq('id', userId)
+  return { data: hh, error: profileError }
 }
 
 export const joinHousehold = async (inviteCode) => {
@@ -138,13 +144,23 @@ export const upsertBudget = (data) =>
 export const deleteBudget = (id) =>
   supabase.from('budgets').delete().eq('id', id)
 
-export const uploadReceipt = async (file, expenseId) => {
-  const ext = file.name.split('.').pop()
-  const path = `${expenseId}-${Date.now()}.${ext}`
+// ─── Receipt / Storage helpers ────────────────────────────────────────────────
+
+export const uploadReceipt = async (file, householdId, expenseId) => {
+  const ext = file.name.split('.').pop().toLowerCase()
+  const path = `${householdId}/${expenseId}.${ext}`
   const { error } = await supabase.storage
     .from('receipts')
-    .upload(path, file, { upsert: true })
+    .upload(path, file, { upsert: true, contentType: file.type })
   if (error) return { error }
+  return { data: { path } }
+}
+
+export const deleteReceipt = (path) =>
+  supabase.storage.from('receipts').remove([path])
+
+export const getReceiptPublicUrl = (path) => {
+  if (!path) return null
   const { data } = supabase.storage.from('receipts').getPublicUrl(path)
-  return { url: data.publicUrl }
+  return data.publicUrl
 }

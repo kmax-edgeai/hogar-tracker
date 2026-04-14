@@ -9,7 +9,7 @@ import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, Users } from 'luci
 import { useAuth } from '../contexts/AuthContext'
 import { getExpenses, getCategories, getBudgets, getHouseholdMembers } from '../lib/supabase'
 
-const CURRENCIES = ['USD', 'PEN', 'EUR', 'Todas']
+const CURRENCIES = ['PEN', 'USD', 'Todas']
 
 function StatCard({ title, value, subtitle, icon: Icon, color = 'blue', trend }) {
   const colors = {
@@ -65,7 +65,7 @@ export default function Dashboard() {
   const [budgets, setBudgets] = useState([])
   const [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [currency, setCurrency] = useState('USD')
+  const [currency, setCurrency] = useState('PEN')
   const [monthsBack, setMonthsBack] = useState(3)
 
   useEffect(() => {

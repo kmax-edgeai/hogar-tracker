@@ -6,7 +6,7 @@ import { Plus, Edit2, Trash2, X, PiggyBank, AlertTriangle, ChevronLeft, ChevronR
 import { useAuth } from '../contexts/AuthContext'
 import { getCategories, getBudgets, upsertBudget, deleteBudget, getExpenses } from '../lib/supabase'
 
-const CURRENCIES = ['USD', 'PEN', 'EUR', 'COP', 'MXN', 'ARS', 'CLP']
+const CURRENCIES = ['PEN', 'USD']
 
 function BudgetModal({ budget, categories, householdId, currentMonth, onClose, onSaved }) {
   const isEdit = !!budget
@@ -19,7 +19,7 @@ function BudgetModal({ budget, categories, householdId, currentMonth, onClose, o
       currency: budget.currency,
       amount: budget.amount,
     } : {
-      currency: 'USD',
+      currency: 'PEN',
     }
   })
 

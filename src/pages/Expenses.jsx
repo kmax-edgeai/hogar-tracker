@@ -9,7 +9,7 @@ import {
   uploadReceipt, deleteReceipt, getReceiptPublicUrl,
 } from '../lib/supabase'
 
-const CURRENCIES = ['USD', 'PEN', 'EUR', 'COP', 'MXN', 'ARS', 'CLP']
+const CURRENCIES = ['PEN', 'USD']
 
 const RECEIPT_MAX_BYTES = 5 * 1024 * 1024
 const RECEIPT_ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf'
@@ -36,7 +36,7 @@ function ExpenseModal({ expense, categories, householdId, userId, onClose, onSav
       amount: expense.amount,
       expense_date: expense.expense_date,
     } : {
-      currency: 'USD',
+      currency: 'PEN',
       expense_date: format(new Date(), 'yyyy-MM-dd'),
     }
   })

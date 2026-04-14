@@ -56,18 +56,12 @@ export const createHousehold = async (name) => {
   return { data }
 }
 
-export const joinHousehold = async (inviteCode, userId) => {
-  const { data: hh, error } = await supabase
-    .from('households')
-    .select('id')
-    .eq('invite_code', inviteCode.toUpperCase())
-    .single()
-  if (error) return { error: new Error('Código de invitación no encontrado') }
-  const { error: profileError } = await supabase
-    .from('profiles')
-    .update({ household_id: hh.id })
-    .eq('id', userId)
-  return { data: hh, error: profileError }
+export const joinHousehold = async (inviteCode) => {
+  const { data, error } = await supabase.rpc('join_household', {
+    invite: inviteCode.toUpperCase(),
+  })
+  if (error) return { error: new Error(error.message) }
+  return { data }
 }
 
 export const getHouseholdMembers = (householdId) =>
@@ -143,3 +137,14 @@ export const upsertBudget = (data) =>
 
 export const deleteBudget = (id) =>
   supabase.from('budgets').delete().eq('id', id)
+
+export const uploadReceipt = async (file, expenseId) => {
+  const ext = file.name.split('.').pop()
+  const path = `${expenseId}-${Date.now()}.${ext}`
+  const { error } = await supabase.storage
+    .from('receipts')
+    .upload(path, file, { upsert: true })
+  if (error) return { error }
+  const { data } = supabase.storage.from('receipts').getPublicUrl(path)
+  return { url: data.publicUrl }
+}

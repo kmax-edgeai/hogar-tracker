@@ -24,16 +24,16 @@ function HouseholdSetup() {
     else await refreshProfile()
   }
 
-  const handleJoin = async (e) => {
-    e.preventDefault()
-    if (!code.trim()) return
-    setLoading(true)
-    setError('')
-    const { error } = await joinHousehold(code.trim(), user.id)
-    setLoading(false)
-    if (error) setError(error.message)
-    else await refreshProfile()
-  }
+const handleJoin = async (e) => {
+  e.preventDefault()
+  if (!code.trim()) return
+  setLoading(true)
+  setError('')
+  const { error } = await joinHousehold(code.trim())
+  setLoading(false)
+  if (error) setError(error.message)
+  else await refreshProfile()
+}
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">

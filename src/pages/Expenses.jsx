@@ -5,7 +5,7 @@ import { Plus, Search, Edit2, Trash2, X, Filter, ChevronDown } from 'lucide-reac
 import { useAuth } from '../contexts/AuthContext'
 import {
   getExpenses, createExpense, updateExpense, deleteExpense,
-  getCategories, getHouseholdMembers
+  getCategories, getHouseholdMembers, uploadReceipt
 } from '../lib/supabase'
 
 const CURRENCIES = ['USD', 'PEN', 'EUR', 'COP', 'MXN', 'ARS', 'CLP']
@@ -14,6 +14,9 @@ function ExpenseModal({ expense, categories, householdId, userId, onClose, onSav
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const isEdit = !!expense
+  const [receiptFile, setReceiptFile] = useState(null)
+  const [receiptPreview, setReceiptPreview] = useState(expense?.receipt_url || null)
+
 
   const { register, handleSubmit, formState: { errors } } = useForm({
     defaultValues: isEdit ? {
@@ -31,22 +34,34 @@ function ExpenseModal({ expense, categories, householdId, userId, onClose, onSav
   })
 
   const onSubmit = async (data) => {
-    setError('')
-    setLoading(true)
-    const payload = {
-      ...data,
-      amount: Number(data.amount),
-      category_id: data.category_id || null,
-      household_id: householdId,
-      user_id: userId,
-    }
-    const { error: err } = isEdit
-      ? await updateExpense(expense.id, payload)
-      : await createExpense(payload)
-    setLoading(false)
-    if (err) setError(err.message)
-    else onSaved()
+  setError('')
+  setLoading(true)
+
+  let receipt_url = expense?.receipt_url || null
+
+  // Si hay un archivo nuevo, súbelo primero
+  if (receiptFile) {
+    const tempId = isEdit ? expense.id : crypto.randomUUID()
+    const { url, error: uploadError } = await uploadReceipt(receiptFile, tempId)
+    if (uploadError) { setError('Error subiendo imagen: ' + uploadError.message); setLoading(false); return }
+    receipt_url = url
   }
+
+  const payload = {
+    ...data,
+    amount: Number(data.amount),
+    category_id: data.category_id || null,
+    household_id: householdId,
+    user_id: userId,
+    receipt_url,
+  }
+  const { error: err } = isEdit
+    ? await updateExpense(expense.id, payload)
+    : await createExpense(payload)
+  setLoading(false)
+  if (err) setError(err.message)
+  else onSaved()
+}
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -139,6 +154,33 @@ function ExpenseModal({ expense, categories, householdId, userId, onClose, onSav
               />
             </div>
           </div>
+
+          <div className="col-span-2">
+  <label className="block text-sm font-medium text-gray-700 mb-1">
+    Foto / Comprobante (opcional)
+  </label>
+  <input
+    type="file"
+    accept="image/*"
+    onChange={e => {
+      const file = e.target.files[0]
+      if (!file) return
+      setReceiptFile(file)
+      setReceiptPreview(URL.createObjectURL(file))
+    }}
+    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+  />
+  {receiptPreview && (
+    <div className="mt-2 relative inline-block">
+      <img src={receiptPreview} alt="Comprobante" className="h-24 rounded-lg border border-gray-200 object-cover" />
+      <button
+        type="button"
+        onClick={() => { setReceiptFile(null); setReceiptPreview(null) }}
+        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600"
+      >✕</button>
+    </div>
+  )}
+</div>
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
@@ -326,6 +368,12 @@ export default function Expenses() {
                       <p className="font-medium text-gray-900">{e.item}</p>
                       {e.description && <p className="text-xs text-gray-400 truncate max-w-xs">{e.description}</p>}
                     </td>
+                  {e.receipt_url && (
+                    <a href={e.receipt_url} target="_blank" rel="noreferrer"
+                      className="text-xs text-blue-500 hover:underline flex items-center gap-1 mt-0.5">
+                      📎 Ver comprobante
+                    </a>
+)}
                     <td className="px-4 py-3 text-gray-600">{e.establishment}</td>
                     <td className="px-4 py-3">
                       {e.categories ? (
